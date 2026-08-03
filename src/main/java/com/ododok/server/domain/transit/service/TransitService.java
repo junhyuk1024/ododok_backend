@@ -95,53 +95,55 @@ public class TransitService {
     private int callODsaySubwayApi(double sx, double sy, double ex, double ey) {
         log.info("📌 현재 적용된 ODsay API Key: {}", apiKey);
 
-        // API Key 유효성 기본 검사
         if ("DUMMY_KEY".equals(apiKey) || apiKey == null || apiKey.isBlank()) {
             log.warn("⚠️ ODsay API Key가 DUMMY_KEY이거나 비어있습니다. 가상 소요시간(42분)을 반환합니다.");
             return 42;
         }
 
         try {
-            // 🌟 1. ODsay 가이드대로 URLEncoder 적용
-            String encodedApiKey = URLEncoder.encode(apiKey.trim(), StandardCharsets.UTF_8.name());
+            String cleanKey = apiKey.trim();
 
-            // 🌟 2. RestTemplate의 이중 인코딩 방지를 위한 EncodingMode.NONE 설정
+            // 🌟 1. 이미 %2F, %2B 등으로 들어왔을 경우를 대비해 원본문자열로 강제 복원(디코딩)
+            if (cleanKey.contains("%")) {
+                cleanKey = java.net.URLDecoder.decode(cleanKey, StandardCharsets.UTF_8.name());
+            }
+
+            // 🌟 2. 원본 키 상태에서 URLEncoder 진행
+            String encodedApiKey = URLEncoder.encode(cleanKey, StandardCharsets.UTF_8.name());
+
+            // 🌟 3. RestTemplate의 자동 이중 인코딩 방지
             DefaultUriBuilderFactory factory = new DefaultUriBuilderFactory();
             factory.setEncodingMode(DefaultUriBuilderFactory.EncodingMode.NONE);
             restTemplate.setUriTemplateHandler(factory);
 
-            // 3. URL 문자열 조합
             String urlInfo = String.format(
                     "https://api.odsay.com/v1/api/searchPubTransPath?SX=%s&SY=%s&EX=%s&EY=%s&apiKey=%s&SearchPathType=1",
                     String.valueOf(sx), String.valueOf(sy), String.valueOf(ex), String.valueOf(ey), encodedApiKey
             );
 
-            // 4. URI 객체 변환
             URI uri = URI.create(urlInfo);
 
             log.info("📌 ODsay 지하철 전용 요청 URI: {}", uri);
 
-            // RAW JSON 응답 확인 (디버깅용 로그)
+            // RAW JSON 응답 확인
             String rawJson = restTemplate.getForObject(uri, String.class);
             log.info("📌 ODsay RAW 응답 결과: {}", rawJson);
 
-            // 5. DTO 파싱
+            // 4. DTO 파싱
             ODsaySearchPathResponseDto response = restTemplate.getForObject(uri, ODsaySearchPathResponseDto.class);
 
-            // 6. 응답 결과 처리
             if (response != null && response.getResult() != null && response.getResult().getPath() != null && !response.getResult().getPath().isEmpty()) {
                 int totalTime = response.getResult().getPath().get(0).getInfo().getTotalTime();
                 log.info("✅ 지하철 소요시간 계산 성공: {}분", totalTime);
                 return totalTime;
             } else {
                 log.warn("⚠️ 해당 경로에는 지하철 직통편이 존재하지 않습니다. (좌표간 지하철 이동 불가)");
-                return 0; // 지하철 경로 없음의 의미로 0 반환
+                return 0;
             }
         } catch (Exception e) {
             log.error("❌ ODsay API 호출 중 예외 발생: {}", e.getMessage(), e);
         }
 
-        // 에러 발생 시 최후의 수단으로 더미 데이터 반환
         return 42;
     }
 }
