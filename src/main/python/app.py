@@ -338,11 +338,18 @@ def recommend_books_api():
         return jsonify({"error": "요청 데이터가 비어있습니다."}), 400
 
     try:
+        # 🌟 보내주신 JSON 구조에 맞춘 파싱 (duration, userCpm, preferredGenres)
+        one_way_minutes = request_data.get("duration") or request_data.get("one_way_minutes") or 40
+        user_cpm = request_data.get("userCpm") or request_data.get("user_cpm") or 950
+        preferred_genres = request_data.get("preferredGenres") or request_data.get("preferred_genres") or ["소설"]
+
+        logger.info(f"📥 [요청 파라미터] 이동시간: {one_way_minutes}분, CPM: {user_cpm}, 선호장르: {preferred_genres}")
+
         recommendations = recommend_books(
             books=books_df,
-            user_cpm=request_data.get("user_cpm", 950),
-            one_way_minutes=request_data.get("one_way_minutes", 40),
-            preferred_genres=request_data.get("preferred_genres", ["소설"]),
+            user_cpm=user_cpm,
+            one_way_minutes=one_way_minutes,
+            preferred_genres=preferred_genres,
             top_n=DEFAULT_TOP_N,
         )
         logger.info(f"✅ [AI Server] 추천 성공: {len(recommendations)}권 반환")
@@ -351,7 +358,6 @@ def recommend_books_api():
     except Exception as e:
         logger.error(f"❌ [AI Server] 에러: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 400
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
