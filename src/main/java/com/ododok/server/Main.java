@@ -2,14 +2,10 @@ package com.ododok.server;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
-import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
-// 🔻 DB 자동 연결 기능 완전히 끄기 (exclude 추가)
-@SpringBootApplication(exclude = {
-        DataSourceAutoConfiguration.class,
-        HibernateJpaAutoConfiguration.class
-})
+@SpringBootApplication
+@EnableJpaRepositories // 🔻 JPA Repository 자동 생성 명시
 public class Main {
     public static void main(String[] args) {
         SpringApplication.run(Main.class, args);
