@@ -260,6 +260,11 @@ def recommend_books(
 
     user_cpm = float(user_cpm)
     one_way_minutes = float(one_way_minutes)
+
+    # 🌟 이동 시간이 0 이하인 경우 즉시 빈 리스트 반환 (0으로 나누기 방지)
+    if one_way_minutes <= 0:
+        return []
+
     preferred_genres_set = normalize_preferred_genres(preferred_genres)
 
     candidates = filter_readable_books(
@@ -316,12 +321,26 @@ def recommend_books_api():
         return jsonify({"error": "JSON 요청 바디가 비어있거나 형식이 올바르지 않습니다."}), 400
 
     try:
-        one_way_minutes = float(request_data.get("duration") or request_data.get("one_way_minutes") or 40)
-        user_cpm = float(request_data.get("userCpm") or request_data.get("user_cpm") or 950)
-        preferred_genres = request_data.get("preferredGenres") or request_data.get("preferred_genres") or ["소설"]
+        # 🌟 핵심 수정: None 체크를 통해 '0'을 Falsy 처리하지 않고 정상 수용
+        raw_duration = request_data.get("duration")
+        if raw_duration is None:
+            raw_duration = request_data.get("one_way_minutes")
+        if raw_duration is None:
+            raw_duration = 40  # 둘 다 명시되지 않았을 때만 기본값 40 적용
+
+        raw_cpm = request_data.get("userCpm")
+        if raw_cpm is None:
+            raw_cpm = request_data.get("user_cpm", 950)
+
+        preferred_genres = request_data.get("preferredGenres")
+        if preferred_genres is None:
+            preferred_genres = request_data.get("preferred_genres", ["소설"])
 
         if isinstance(preferred_genres, str):
             preferred_genres = [preferred_genres]
+
+        one_way_minutes = float(raw_duration)
+        user_cpm = float(raw_cpm)
 
         logger.info(f"📊 [AI Server Parsed] duration={one_way_minutes}, cpm={user_cpm}, genres={preferred_genres}")
 
