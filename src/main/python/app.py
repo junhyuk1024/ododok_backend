@@ -33,26 +33,7 @@ DEFAULT_TOP_N = 5
 
 
 # =========================================================
-# 1. 서버 시작 시 데이터 인메모리 로드
-# =========================================================
-def initialize_data():
-    global books_df
-    file_path = Path(__file__).resolve().parent / BOOK_FILE_NAME
-
-    logger.info(f"🔥 [AI Server] 도서 데이터 로드 및 전처리 시작... 경로: {file_path}")
-
-    try:
-        raw_books = load_book_data(file_path=file_path)
-        books_df = calculate_popularity_score(books=raw_books)
-        logger.info(f"✅ [AI Server] 도서 데이터 준비 완료: {len(books_df)}권 확보")
-    except Exception as e:
-        logger.error(f"❌ [AI Server] 데이터 초기화 중 에러 발생: {e}", exc_info=True)
-
-initialize_data()
-
-
-# =========================================================
-# 2. 도서 데이터 불러오기 및 전처리
+# 1. 도서 데이터 불러오기 및 전처리 함수들
 # =========================================================
 def load_book_data(file_path: Union[str, Path]) -> pd.DataFrame:
     file_path = Path(file_path)
@@ -120,8 +101,50 @@ def load_book_data(file_path: Union[str, Path]) -> pd.DataFrame:
     return books
 
 
+def calculate_popularity_score(books: pd.DataFrame) -> pd.DataFrame:
+    result = books.copy()
+    result["popularity_score"] = MISSING_POPULARITY_SCORE
+
+    for genre, genre_group in result.groupby(GENRE_COL):
+        valid_loans = genre_group[LOAN_COL].dropna()
+        valid_count = len(valid_loans)
+
+        if valid_count <= 1:
+            continue
+
+        loan_rank = valid_loans.rank(method="average", ascending=True)
+
+        popularity_score = (
+            (loan_rank - 1) / (valid_count - 1) * MAX_POPULARITY_SCORE
+        )
+
+        result.loc[popularity_score.index, "popularity_score"] = popularity_score
+
+    return result
+
+
 # =========================================================
-# 3. 사용자 선호 장르 검증
+# 2. 데이터 초기화 함수 (필요 함수 정의 후 호출!)
+# =========================================================
+def initialize_data():
+    global books_df
+    file_path = Path(__file__).resolve().parent / BOOK_FILE_NAME
+
+    logger.info(f"🔥 [AI Server] 도서 데이터 로드 및 전처리 시작... 경로: {file_path}")
+
+    try:
+        raw_books = load_book_data(file_path=file_path)
+        books_df = calculate_popularity_score(books=raw_books)
+        logger.info(f"✅ [AI Server] 도서 데이터 준비 완료: {len(books_df)}권 확보")
+    except Exception as e:
+        logger.error(f"❌ [AI Server] 데이터 초기화 중 에러 발생: {e}", exc_info=True)
+
+# 🌟 모든 로딩 관련 함수(load_book_data 등)가 선언된 후 호출
+initialize_data()
+
+
+# =========================================================
+# 3. 사용자 선호 장르 및 점수 계산 로직
 # =========================================================
 def normalize_preferred_genres(preferred_genres: Any) -> Set[str]:
     if isinstance(preferred_genres, str):
@@ -149,34 +172,6 @@ def normalize_preferred_genres(preferred_genres: Any) -> Set[str]:
     return cleaned_genres
 
 
-# =========================================================
-# 4. 장르별 인기도 점수 계산
-# =========================================================
-def calculate_popularity_score(books: pd.DataFrame) -> pd.DataFrame:
-    result = books.copy()
-    result["popularity_score"] = MISSING_POPULARITY_SCORE
-
-    for genre, genre_group in result.groupby(GENRE_COL):
-        valid_loans = genre_group[LOAN_COL].dropna()
-        valid_count = len(valid_loans)
-
-        if valid_count <= 1:
-            continue
-
-        loan_rank = valid_loans.rank(method="average", ascending=True)
-
-        popularity_score = (
-            (loan_rank - 1) / (valid_count - 1) * MAX_POPULARITY_SCORE
-        )
-
-        result.loc[popularity_score.index, "popularity_score"] = popularity_score
-
-    return result
-
-
-# =========================================================
-# 5. 완독 가능한 책 필터링 및 점수 계산
-# =========================================================
 def filter_readable_books(
     books: pd.DataFrame, user_cpm: float, one_way_minutes: float
 ) -> pd.DataFrame:
@@ -219,9 +214,6 @@ def calculate_recommendation_scores(
     return result
 
 
-# =========================================================
-# 6. 정렬 및 상위 도서 선택
-# =========================================================
 def sort_books_by_score(books: pd.DataFrame) -> pd.DataFrame:
     if books.empty:
         return books.copy()
@@ -258,9 +250,6 @@ def select_top_books(
     return selected_books
 
 
-# =========================================================
-# 7. 최종 추천 로직
-# =========================================================
 def recommend_books(
     books: pd.DataFrame,
     user_cpm: float,
@@ -305,7 +294,7 @@ def recommend_books(
 
 
 # =========================================================
-# 8. Flask API 라우트
+# 4. Flask API 라우트
 # =========================================================
 @app.route('/', methods=['GET'])
 def health_check():
@@ -313,7 +302,7 @@ def health_check():
 
 @app.route("/api/v1/ai/recommend", methods=["POST"])
 def recommend_books_api():
-    logger.info("🚀 [AI Server] /api/v1/ai/recommend 디버그 라우트 도착!")
+    logger.info("🚀 [AI Server] /api/v1/ai/recommend 요청 도착!")
 
     if books_df is None:
         logger.error("❌ [AI Server Error] books_df가 None입니다.")
@@ -327,7 +316,6 @@ def recommend_books_api():
         return jsonify({"error": "JSON 요청 바디가 비어있거나 형식이 올바르지 않습니다."}), 400
 
     try:
-        # duration, userCpm, preferredGenres 등 파라미터 추출
         one_way_minutes = float(request_data.get("duration") or request_data.get("one_way_minutes") or 40)
         user_cpm = float(request_data.get("userCpm") or request_data.get("user_cpm") or 950)
         preferred_genres = request_data.get("preferredGenres") or request_data.get("preferred_genres") or ["소설"]
