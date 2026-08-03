@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Any, Dict, List, Set, Union
 import logging
+import traceback
 import pandas as pd
 from flask import Flask, request, jsonify
 
@@ -10,39 +11,24 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 엑셀 파일 이름
 BOOK_FILE_NAME = "책데이터-완-.csv.xlsx"
-
-# 메모리에 저장될 전역 도서 데이터
 books_df = None
 
-# 🌟 엑셀 파일 열 이름
 ISBN_COL = "ISBN"
 TITLE_COL = "제목"
 CHAR_COUNT_COL = "글자수"
 GENRE_COL = "장르"
 LOAN_COL = "최근 1년간 대출건수"
 
-# 허용 장르
-VALID_GENRES = {
-    "소설",
-    "수필",
-    "기록문학",
-}
+VALID_GENRES = {"소설", "수필", "기록문학"}
 
-# 추천 점수 배점
 MAX_TIME_SCORE = 60.0
 MAX_GENRE_SCORE = 30.0
 MAX_POPULARITY_SCORE = 10.0
-
-# 대출정보가 없는 책의 인기도점수
 MISSING_POPULARITY_SCORE = 2.5
-
-# 최종 추천 권수
 DEFAULT_TOP_N = 5
 
 
@@ -51,7 +37,7 @@ DEFAULT_TOP_N = 5
 # =========================================================
 def initialize_data():
     global books_df
-    file_path = Path(__file__).parent / BOOK_FILE_NAME
+    file_path = Path(__file__).resolve().parent / BOOK_FILE_NAME
 
     logger.info(f"🔥 [AI Server] 도서 데이터 로드 및 전처리 시작... 경로: {file_path}")
 
@@ -62,7 +48,6 @@ def initialize_data():
     except Exception as e:
         logger.error(f"❌ [AI Server] 데이터 초기화 중 에러 발생: {e}", exc_info=True)
 
-# 🌟 Render(gunicorn) 서버 구동 전 엑셀 데이터 사전 로드 실행
 initialize_data()
 
 
@@ -328,22 +313,29 @@ def health_check():
 
 @app.route("/api/v1/ai/recommend", methods=["POST"])
 def recommend_books_api():
-    logger.info("🚀 [AI Server] 추천 요청 도착!")
+    logger.info("🚀 [AI Server] /api/v1/ai/recommend 디버그 라우트 도착!")
 
     if books_df is None:
-        return jsonify({"error": "서버 데이터 초기화 실패"}), 500
+        logger.error("❌ [AI Server Error] books_df가 None입니다.")
+        return jsonify({"error": "서버 데이터 초기화 실패", "details": "books_df is None"}), 500
 
-    request_data = request.get_json()
-    if not request_data:
-        return jsonify({"error": "요청 데이터가 비어있습니다."}), 400
+    request_data = request.get_json(silent=True)
+    logger.info(f"📥 [AI Server Request Body] 수신 데이터: {request_data}")
+
+    if request_data is None:
+        logger.error("❌ [AI Server Error] Request Body 파싱 실패")
+        return jsonify({"error": "JSON 요청 바디가 비어있거나 형식이 올바르지 않습니다."}), 400
 
     try:
-        # 🌟 보내주신 JSON 구조에 맞춘 파싱 (duration, userCpm, preferredGenres)
-        one_way_minutes = request_data.get("duration") or request_data.get("one_way_minutes") or 40
-        user_cpm = request_data.get("userCpm") or request_data.get("user_cpm") or 950
+        # duration, userCpm, preferredGenres 등 파라미터 추출
+        one_way_minutes = float(request_data.get("duration") or request_data.get("one_way_minutes") or 40)
+        user_cpm = float(request_data.get("userCpm") or request_data.get("user_cpm") or 950)
         preferred_genres = request_data.get("preferredGenres") or request_data.get("preferred_genres") or ["소설"]
 
-        logger.info(f"📥 [요청 파라미터] 이동시간: {one_way_minutes}분, CPM: {user_cpm}, 선호장르: {preferred_genres}")
+        if isinstance(preferred_genres, str):
+            preferred_genres = [preferred_genres]
+
+        logger.info(f"📊 [AI Server Parsed] duration={one_way_minutes}, cpm={user_cpm}, genres={preferred_genres}")
 
         recommendations = recommend_books(
             books=books_df,
@@ -352,12 +344,15 @@ def recommend_books_api():
             preferred_genres=preferred_genres,
             top_n=DEFAULT_TOP_N,
         )
-        logger.info(f"✅ [AI Server] 추천 성공: {len(recommendations)}권 반환")
-        return jsonify({"books": recommendations})
+
+        logger.info(f"✅ [AI Server Success] 추천 결과 {len(recommendations)}권 반환!")
+        return jsonify({"books": recommendations}), 200
 
     except Exception as e:
-        logger.error(f"❌ [AI Server] 에러: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 400
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ [AI Server Fatal Exception]\n{error_trace}")
+        return jsonify({"error": str(e), "message": "추천 로직 실행 오류"}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
