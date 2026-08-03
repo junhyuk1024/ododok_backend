@@ -1,0 +1,46 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.4'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'com.ododok'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    sourceCompatibility = '17'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // JPA 스타터 추가 (@Transactional 포함됨)
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    // MySQL을 사용 중이시라면 함께 필요합니다
+    runtimeOnly 'com.mysql:mysql-connector-j'
+
+
+    // 🌟 OpenFeign 의존성 추가
+    implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
+
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:2023.0.0"
+    }
+}
+tasks.named('test') {
+    useJUnitPlatform()
+}
