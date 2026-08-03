@@ -329,43 +329,54 @@ def recommend_books(
 # =========================================================
 @app.route("/api/v1/ai/recommend", methods=["POST"])
 def recommend_books_api():
-    logger.info("🚀 [AI Server] 추천 요청 도착!")
+    logger.info("🚀 [AI Server] /api/v1/ai/recommend 요청 도착!")
 
+    # 1. books_df 상태 점검
     if books_df is None:
-        logger.error("❌ [AI Server] books_df가 None입니다.")
-        return jsonify({"error": "서버 데이터 초기화 실패"}), 500
+        logger.error("❌ [AI Server Error] books_df가 None입니다. 엑셀 로딩에 실패했습니다.")
+        return jsonify({"error": "서버 데이터 초기화 실패", "details": "books_df is None"}), 500
 
-    request_data = request.get_json()
-    if not request_data:
-        logger.error("❌ [AI Server] Request body가 비어있습니다.")
-        return jsonify({"error": "요청 데이터가 비어있습니다."}), 400
+    # 2. Request JSON 데이터 파싱 점검
+    request_data = request.get_json(silent=True)
+    logger.info(f"📥 [AI Server Request Data] 수신된 raw JSON: {request_data}")
+
+    if request_data is None:
+        logger.error("❌ [AI Server Error] JSON 데이터를 읽을 수 없습니다. (Content-Type 확인 필요)")
+        return jsonify({"error": "요청 데이터가 없거나 JSON 형식이 올바르지 않습니다."}), 400
 
     try:
-        # 데이터 파싱 및 안전한 기본값 세팅
-        raw_duration = request_data.get("duration") or request_data.get("one_way_minutes") or 40
-        raw_cpm = request_data.get("userCpm") or request_data.get("user_cpm") or 950
-        raw_genres = request_data.get("preferredGenres") or request_data.get("preferred_genres") or ["소설"]
+        # 3. 안전한 파라미터 추출
+        one_way_minutes = float(request_data.get("duration") or request_data.get("one_way_minutes") or 40)
+        user_cpm = float(request_data.get("userCpm") or request_data.get("user_cpm") or 950)
+        
+        preferred_genres = request_data.get("preferredGenres") or request_data.get("preferred_genres") or ["소설"]
+        if isinstance(preferred_genres, str):
+            preferred_genres = [preferred_genres]
 
-        # 숫자형 변환 보장
-        one_way_minutes = float(raw_duration)
-        user_cpm = float(raw_cpm)
+        logger.info(f"📊 [AI Server Parsed] duration={one_way_minutes}, cpm={user_cpm}, genres={preferred_genres}")
 
-        logger.info(f"📥 [요청 파라미터] 이동시간: {one_way_minutes}분, CPM: {user_cpm}, 선호장르: {raw_genres}")
-
+        # 4. 추천 로직 실행
         recommendations = recommend_books(
             books=books_df,
             user_cpm=user_cpm,
             one_way_minutes=one_way_minutes,
-            preferred_genres=raw_genres,
+            preferred_genres=preferred_genres,
             top_n=DEFAULT_TOP_N,
         )
-        logger.info(f"✅ [AI Server] 추천 성공: {len(recommendations)}권 반환")
-        return jsonify({"books": recommendations})
+
+        logger.info(f"✅ [AI Server Success] 추천 결과 {len(recommendations)}권 생성 완료!")
+        return jsonify({"books": recommendations}), 200
 
     except Exception as e:
-        # Render 로그에 상세한 에러 스택트레이스를 출력하도록 수정
-        logger.error(f"❌ [AI Server] 추천 로직 실행 중 에러 발생: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e), "message": "추천 처리 중 오류가 발생했습니다."}), 500
+        # Render 로그에 완벽한 에러 추적 스택트레이스를 찍도록 방어 코드 작성
+        import traceback
+        error_trace = traceback.format_exc()
+        logger.error(f"❌ [AI Server Fatal Error]\n{error_trace}")
+        
+        return jsonify({
+            "error": str(e),
+            "message": "AI 추천 계산 처리 중 내부 에러가 발생했습니다."
+        }), 500
 
 
 # =========================================================
