@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.DefaultUriBuilderFactory;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -65,7 +66,7 @@ public class TransitService {
         aiRequestBody.put("preferred_genres", preferredGenres != null && !preferredGenres.isEmpty() ? preferredGenres : List.of("소설"));
 
         try {
-            // FeignClient를 통해 파이썬 AI 서버(포트 5000) 호출
+            // FeignClient를 통해 파이썬 AI 서버 호출
             AiRecommendResponseDto aiResponse = aiRecommendClient.getRecommendBooks(aiRequestBody);
             if (aiResponse != null && aiResponse.getBooks() != null) {
                 log.info("✅ 파이썬 AI 도서 추천 성공: {}권 발견", aiResponse.getBooks().size());
@@ -95,22 +96,27 @@ public class TransitService {
         log.info("📌 현재 적용된 ODsay API Key: {}", apiKey);
 
         // API Key 유효성 기본 검사
-        if ("DUMMY_KEY".equals(apiKey) || apiKey.isBlank()) {
+        if ("DUMMY_KEY".equals(apiKey) || apiKey == null || apiKey.isBlank()) {
             log.warn("⚠️ ODsay API Key가 DUMMY_KEY이거나 비어있습니다. 가상 소요시간(42분)을 반환합니다.");
             return 42;
         }
 
         try {
-            // 1. API Key 인코딩 (ODsay 가이드 준수)
-            String encodedApiKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8.name());
+            // 🌟 1. ODsay 가이드대로 URLEncoder 적용
+            String encodedApiKey = URLEncoder.encode(apiKey.trim(), StandardCharsets.UTF_8.name());
 
-            // 2. URL 문자열 조합 (SearchPathType=1 파라미터 추가)
+            // 🌟 2. RestTemplate의 이중 인코딩 방지를 위한 EncodingMode.NONE 설정
+            DefaultUriBuilderFactory factory = new DefaultUriBuilderFactory();
+            factory.setEncodingMode(DefaultUriBuilderFactory.EncodingMode.NONE);
+            restTemplate.setUriTemplateHandler(factory);
+
+            // 3. URL 문자열 조합
             String urlInfo = String.format(
                     "https://api.odsay.com/v1/api/searchPubTransPath?SX=%s&SY=%s&EX=%s&EY=%s&apiKey=%s&SearchPathType=1",
                     String.valueOf(sx), String.valueOf(sy), String.valueOf(ex), String.valueOf(ey), encodedApiKey
             );
 
-            // 3. RestTemplate의 이중 인코딩 방지를 위해 URI.create() 사용
+            // 4. URI 객체 변환
             URI uri = URI.create(urlInfo);
 
             log.info("📌 ODsay 지하철 전용 요청 URI: {}", uri);
@@ -119,10 +125,10 @@ public class TransitService {
             String rawJson = restTemplate.getForObject(uri, String.class);
             log.info("📌 ODsay RAW 응답 결과: {}", rawJson);
 
-            // 4. DTO 파싱
+            // 5. DTO 파싱
             ODsaySearchPathResponseDto response = restTemplate.getForObject(uri, ODsaySearchPathResponseDto.class);
 
-            // 5. 응답 결과 처리
+            // 6. 응답 결과 처리
             if (response != null && response.getResult() != null && response.getResult().getPath() != null && !response.getResult().getPath().isEmpty()) {
                 int totalTime = response.getResult().getPath().get(0).getInfo().getTotalTime();
                 log.info("✅ 지하철 소요시간 계산 성공: {}분", totalTime);
